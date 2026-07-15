@@ -1,0 +1,13 @@
+--- a/uniwill-acpi.c
++++ b/uniwill-acpi.c
+@@ -2192,7 +2192,9 @@ static struct uniwill_device_descriptor pf5pu1g_descriptor __initdata = {
+ };
+ 
+ static struct uniwill_device_descriptor wujie14xa_descriptor __initdata = {
+-	.features = UNIWILL_FEATURE_PLATFORM_PROFILE,
++	.features = UNIWILL_FEATURE_CPU_TEMP |
++		    UNIWILL_FEATURE_PRIMARY_FAN |
++		    UNIWILL_FEATURE_PLATFORM_PROFILE,
+ };
+ 
+ static const struct dmi_system_id uniwill_dmi_table[] __initconst = {

@@ -36,16 +36,27 @@ Fn+X cycles through the profiles, and the selected mode is preserved across
 suspend and resume. `power-profiles-daemon` and KDE/GNOME can use the backend
 without a model-specific userspace service.
 
+The driver also exposes read-only hwmon telemetry from EC registers verified
+on this machine: CPU temperature (`temp1_input`, register `0x043e`), main-fan
+speed (`fan1_input`, `0x0464`/`0x0465`), and main-fan duty as a read-only
+`pwm1` (`0x075b`). No fan-control writes are implemented. The GPU temperature
+and secondary-fan channels stay disabled: there is no discrete GPU, and the
+second fan channel is not trustworthy on this board.
+
 ## Source and patch layout
 
 - `uniwill-acpi.c`, `uniwill-wmi.c`, `uniwill-wmi.h` — vendored driver source.
 - `Kbuild`, `dkms.conf`, `PKGBUILD` — local DKMS/Arch packaging.
-- `patches/` — reviewable deltas against the pinned upstream source.
+- `patches/` — reviewable deltas against the pinned upstream source, applied
+  in order.
 
 The source is based on Linux v7.1 commit
 `8cd9520d35a6c38db6567e97dd93b1f11f185dc6` from
-`drivers/platform/x86/uniwill/`. The initial delta is documented in
-[patches/platform-profile-vs-v7.1.patch](patches/platform-profile-vs-v7.1.patch).
+`drivers/platform/x86/uniwill/`. The deltas are documented in
+[patches/platform-profile-vs-v7.1.patch](patches/platform-profile-vs-v7.1.patch)
+(platform_profile support) and
+[patches/hwmon-telemetry.patch](patches/hwmon-telemetry.patch) (read-only
+hwmon telemetry on top of it).
 
 ## Build on Arch Linux
 
@@ -76,6 +87,7 @@ dkms status wujie14x-uniwill
 modinfo -n uniwill_laptop
 cat /sys/class/platform-profile/platform-profile-0/{name,choices,profile}
 powerprofilesctl list
+sensors uniwill-*
 ```
 
 ## License and credits
@@ -93,4 +105,5 @@ GPL-2.0-or-later, matching the upstream driver. See [LICENSE](LICENSE).
 本仓库是机械革命无界 14XA 的 Uniwill Linux 平台驱动适配仓库，通过标准
 `platform_profile` 接口提供三档功耗模式（25 W / 45 W / 65 W），支持 Fn+X 循环
 切换，挂起恢复后保持所选模式，可直接配合 `power-profiles-daemon` 与
-KDE/GNOME 的电源模式使用。
+KDE/GNOME 的电源模式使用；并通过标准 hwmon 接口提供只读的 CPU 温度、主风扇
+转速与占空比监控（`sensors` 可直接读取），不包含任何风扇写入控制。
