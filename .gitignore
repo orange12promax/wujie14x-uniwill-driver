@@ -1,0 +1,16 @@
+*.pkg.tar.zst
+pkg/
+src/
+*.o
+*.ko
+*.mod*
+.SRCINFO
+.*.cmd
+.tmp_versions/
+Module.symvers
+modules.order
+*.code-workspace
+
+# Local working notes, not part of the published repository
+/AGENTS.md
+/docs/
