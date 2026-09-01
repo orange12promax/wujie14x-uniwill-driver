@@ -47,16 +47,14 @@ second fan channel is not trustworthy on this board.
 
 - `uniwill-acpi.c`, `uniwill-wmi.c`, `uniwill-wmi.h` — vendored driver source.
 - `Kbuild`, `dkms.conf`, `PKGBUILD` — local DKMS/Arch packaging.
-- `patches/` — reviewable deltas against the pinned upstream source, applied
-  in order.
+- `patches/` — the reviewable delta against the pinned upstream source.
 
 The source is based on Linux v7.1 commit
 `8cd9520d35a6c38db6567e97dd93b1f11f185dc6` from
-`drivers/platform/x86/uniwill/`. The deltas are documented in
-[patches/platform-profile-vs-v7.1.patch](patches/platform-profile-vs-v7.1.patch)
-(platform_profile support) and
-[patches/hwmon-telemetry.patch](patches/hwmon-telemetry.patch) (read-only
-hwmon telemetry on top of it).
+`drivers/platform/x86/uniwill/`. The complete local delta (DMI match,
+platform_profile support, read-only hwmon telemetry and kernel API
+compatibility) is
+[patches/wujie14xa-vs-v7.1.patch](patches/wujie14xa-vs-v7.1.patch).
 
 ## Build on Arch Linux
 

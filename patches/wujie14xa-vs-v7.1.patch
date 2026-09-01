@@ -1,0 +1,296 @@
+--- a/uniwill-acpi.c
++++ b/uniwill-acpi.c
+@@ -39,6 +39,7 @@
+ #include <linux/mutex.h>
+ #include <linux/notifier.h>
+ #include <linux/platform_device.h>
++#include <linux/platform_profile.h>
+ #include <linux/pm.h>
+ #include <linux/printk.h>
+ #include <linux/regmap.h>
+@@ -327,6 +328,11 @@
+ #define UNIWILL_FEATURE_SECONDARY_FAN		BIT(8)
+ #define UNIWILL_FEATURE_NVIDIA_CTGP_CONTROL	BIT(9)
+ #define UNIWILL_FEATURE_USB_C_POWER_PRIORITY	BIT(10)
++#define UNIWILL_FEATURE_PLATFORM_PROFILE	BIT(11)
++
++#define UNIWILL_PROFILE_LOW_POWER	(FAN_MODE_USER | FAN_MODE_HIGH)
++#define UNIWILL_PROFILE_BALANCED	0
++#define UNIWILL_PROFILE_PERFORMANCE	FAN_MODE_TURBO
+ 
+ enum usb_c_power_priority_options {
+ 	USB_C_POWER_PRIORITY_CHARGING = 0,
+@@ -353,6 +359,8 @@
+ 	struct notifier_block nb;
+ 	struct mutex usb_c_power_priority_lock; /* Protects dependent bit write and state safe */
+ 	enum usb_c_power_priority_options last_usb_c_power_priority_option;
++	struct device *ppdev;
++	unsigned int last_manual_fan_ctrl;
+ };
+ 
+ struct uniwill_battery_entry {
+@@ -526,6 +534,7 @@
+ 	case EC_ADDR_LIGHTBAR_AC_GREEN:
+ 	case EC_ADDR_LIGHTBAR_AC_BLUE:
+ 	case EC_ADDR_BIOS_OEM:
++	case EC_ADDR_MANUAL_FAN_CTRL:
+ 	case EC_ADDR_TRIGGER:
+ 	case EC_ADDR_OEM_4:
+ 	case EC_ADDR_CHARGE_CTRL:
+@@ -561,6 +570,7 @@
+ 	case EC_ADDR_LIGHTBAR_AC_GREEN:
+ 	case EC_ADDR_LIGHTBAR_AC_BLUE:
+ 	case EC_ADDR_BIOS_OEM:
++	case EC_ADDR_MANUAL_FAN_CTRL:
+ 	case EC_ADDR_PWM_1:
+ 	case EC_ADDR_PWM_2:
+ 	case EC_ADDR_TRIGGER:
+@@ -594,6 +604,7 @@
+ 	case EC_ADDR_SECOND_FAN_RPM_2:
+ 	case EC_ADDR_BAT_ALERT:
+ 	case EC_ADDR_BIOS_OEM:
++	case EC_ADDR_MANUAL_FAN_CTRL:
+ 	case EC_ADDR_PWM_1:
+ 	case EC_ADDR_PWM_2:
+ 	case EC_ADDR_TRIGGER:
+@@ -1471,7 +1482,7 @@
+ 	struct uniwill_battery_entry *entry;
+ 	int ret;
+ 
+-	entry = kzalloc_obj(*entry);
++	entry = kzalloc_obj(*entry, GFP_KERNEL);
+ 	if (!entry)
+ 		return -ENOMEM;
+ 
+@@ -1550,10 +1561,98 @@
+ 	return devm_battery_hook_register(data->dev, &data->hook);
+ }
+ 
++static int uniwill_platform_profile_probe(void *drvdata, unsigned long *choices)
++{
++	set_bit(PLATFORM_PROFILE_LOW_POWER, choices);
++	set_bit(PLATFORM_PROFILE_BALANCED, choices);
++	set_bit(PLATFORM_PROFILE_PERFORMANCE, choices);
++
++	return 0;
++}
++
++static int uniwill_platform_profile_hidden_choices(void *drvdata,
++						   unsigned long *choices)
++{
++	set_bit(PLATFORM_PROFILE_CUSTOM, choices);
++
++	return 0;
++}
++
++static int uniwill_platform_profile_get(struct device *dev,
++					enum platform_profile_option *profile)
++{
++	struct uniwill_data *data = dev_get_drvdata(dev);
++	unsigned int value;
++	int ret;
++
++	ret = regmap_read(data->regmap, EC_ADDR_MANUAL_FAN_CTRL, &value);
++	if (ret < 0)
++		return ret;
++
++	switch (value) {
++	case UNIWILL_PROFILE_LOW_POWER:
++		*profile = PLATFORM_PROFILE_LOW_POWER;
++		break;
++	case UNIWILL_PROFILE_BALANCED:
++		*profile = PLATFORM_PROFILE_BALANCED;
++		break;
++	case UNIWILL_PROFILE_PERFORMANCE:
++		*profile = PLATFORM_PROFILE_PERFORMANCE;
++		break;
++	default:
++		*profile = PLATFORM_PROFILE_CUSTOM;
++		break;
++	}
++
++	return 0;
++}
++
++static int uniwill_platform_profile_set(struct device *dev,
++					enum platform_profile_option profile)
++{
++	struct uniwill_data *data = dev_get_drvdata(dev);
++	unsigned int value;
++
++	switch (profile) {
++	case PLATFORM_PROFILE_LOW_POWER:
++		value = UNIWILL_PROFILE_LOW_POWER;
++		break;
++	case PLATFORM_PROFILE_BALANCED:
++		value = UNIWILL_PROFILE_BALANCED;
++		break;
++	case PLATFORM_PROFILE_PERFORMANCE:
++		value = UNIWILL_PROFILE_PERFORMANCE;
++		break;
++	default:
++		return -EOPNOTSUPP;
++	}
++
++	return regmap_write(data->regmap, EC_ADDR_MANUAL_FAN_CTRL, value);
++}
++
++static const struct platform_profile_ops uniwill_platform_profile_ops = {
++	.probe = uniwill_platform_profile_probe,
++	.hidden_choices = uniwill_platform_profile_hidden_choices,
++	.profile_get = uniwill_platform_profile_get,
++	.profile_set = uniwill_platform_profile_set,
++};
++
++static int uniwill_platform_profile_init(struct uniwill_data *data)
++{
++	if (!uniwill_device_supports(data, UNIWILL_FEATURE_PLATFORM_PROFILE))
++		return 0;
++
++	data->ppdev = devm_platform_profile_register(data->dev, "uniwill", data,
++						    &uniwill_platform_profile_ops);
++
++	return PTR_ERR_OR_ZERO(data->ppdev);
++}
++
+ static int uniwill_notifier_call(struct notifier_block *nb, unsigned long action, void *dummy)
+ {
+ 	struct uniwill_data *data = container_of(nb, struct uniwill_data, nb);
+ 	struct uniwill_battery_entry *entry;
++	int ret;
+ 
+ 	switch (action) {
+ 	case UNIWILL_OSD_BATTERY_ALERT:
+@@ -1579,7 +1678,22 @@
+ 		sysfs_notify(&data->dev->kobj, NULL, "fn_lock");
+ 
+ 		return NOTIFY_OK;
++	case UNIWILL_OSD_PERFORMANCE_MODE_TOGGLE:
++		if (!uniwill_device_supports(data, UNIWILL_FEATURE_PLATFORM_PROFILE))
++			goto report_input_event;
++
++		/* A custom/boost mode has no successor, so restart at balanced. */
++		ret = platform_profile_cycle();
++		if (ret == -EINVAL) {
++			ret = uniwill_platform_profile_set(data->ppdev,
++							   PLATFORM_PROFILE_BALANCED);
++			if (ret == 0)
++				platform_profile_notify(data->ppdev);
++		}
++
++		return notifier_from_errno(ret);
+ 	default:
++report_input_event:
+ 		mutex_lock(&data->input_lock);
+ 		sparse_keymap_report_event(data->input_device, action, 1, true);
+ 		mutex_unlock(&data->input_lock);
+@@ -1707,6 +1821,10 @@
+ 	if (ret < 0)
+ 		return ret;
+ 
++	ret = uniwill_platform_profile_init(data);
++	if (ret < 0)
++		return ret;
++
+ 	return uniwill_input_init(data);
+ }
+ 
+@@ -1754,6 +1872,15 @@
+ 	return regmap_read(data->regmap, EC_ADDR_CHARGE_CTRL, &data->last_charge_ctrl);
+ }
+ 
++static int uniwill_suspend_platform_profile(struct uniwill_data *data)
++{
++	if (!uniwill_device_supports(data, UNIWILL_FEATURE_PLATFORM_PROFILE))
++		return 0;
++
++	return regmap_read(data->regmap, EC_ADDR_MANUAL_FAN_CTRL,
++			   &data->last_manual_fan_ctrl);
++}
++
+ static int uniwill_suspend_nvidia_ctgp(struct uniwill_data *data)
+ {
+ 	if (!uniwill_device_supports(data, UNIWILL_FEATURE_NVIDIA_CTGP_CONTROL))
+@@ -1780,6 +1907,10 @@
+ 	if (ret < 0)
+ 		return ret;
+ 
++	ret = uniwill_suspend_platform_profile(data);
++	if (ret < 0)
++		return ret;
++
+ 	ret = uniwill_suspend_nvidia_ctgp(data);
+ 	if (ret < 0)
+ 		return ret;
+@@ -1827,6 +1958,21 @@
+ 				  data->last_charge_ctrl);
+ }
+ 
++static int uniwill_resume_platform_profile(struct uniwill_data *data)
++{
++	int ret;
++
++	if (!uniwill_device_supports(data, UNIWILL_FEATURE_PLATFORM_PROFILE))
++		return 0;
++
++	ret = regmap_write(data->regmap, EC_ADDR_MANUAL_FAN_CTRL,
++			   data->last_manual_fan_ctrl);
++	if (ret == 0)
++		platform_profile_notify(data->ppdev);
++
++	return ret;
++}
++
+ static int uniwill_resume_nvidia_ctgp(struct uniwill_data *data)
+ {
+ 	if (!uniwill_device_supports(data, UNIWILL_FEATURE_NVIDIA_CTGP_CONTROL))
+@@ -1863,6 +2009,10 @@
+ 	if (ret < 0)
+ 		return ret;
+ 
++	ret = uniwill_resume_platform_profile(data);
++	if (ret < 0)
++		return ret;
++
+ 	ret = uniwill_resume_battery(data);
+ 	if (ret < 0)
+ 		return ret;
+@@ -2041,6 +2191,12 @@
+ 		    UNIWILL_FEATURE_PRIMARY_FAN,
+ };
+ 
++static struct uniwill_device_descriptor wujie14xa_descriptor __initdata = {
++	.features = UNIWILL_FEATURE_CPU_TEMP |
++		    UNIWILL_FEATURE_PRIMARY_FAN |
++		    UNIWILL_FEATURE_PLATFORM_PROFILE,
++};
++
+ static const struct dmi_system_id uniwill_dmi_table[] __initconst = {
+ 	{
+ 		.ident = "XMG FUSION 15 (L19)",
+@@ -2474,6 +2630,15 @@
+ 		},
+ 		.driver_data = &tux_featureset_1_descriptor,
+ 	},
++	{
++		.ident = "MECHREVO WUJIE14XA",
++		.matches = {
++			DMI_EXACT_MATCH(DMI_SYS_VENDOR, "MECHREVO"),
++			DMI_EXACT_MATCH(DMI_PRODUCT_NAME, "WUJIE14XA"),
++			DMI_EXACT_MATCH(DMI_BOARD_NAME, "WUJIE14-GX4HRXL"),
++		},
++		.driver_data = &wujie14xa_descriptor,
++	},
+ 	{ }
+ };
+ MODULE_DEVICE_TABLE(dmi, uniwill_dmi_table);
+--- a/uniwill-wmi.c
++++ b/uniwill-wmi.c
+@@ -77,7 +77,6 @@
+ 		.probe_type = PROBE_PREFER_ASYNCHRONOUS,
+ 	},
+ 	.id_table = uniwill_wmi_id_table,
+-	.min_event_size = sizeof(u32),
+ 	.notify = uniwill_wmi_notify,
+ 	.no_singleton = true,
+ };
