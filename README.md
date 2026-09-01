@@ -32,8 +32,10 @@ standard Linux `platform_profile` interface:
 | `balanced` | `0x00` | 45 W |
 | `performance` | `0x10` | 65 W |
 
-Fn+X cycles through the profiles, and the selected mode is preserved across
-suspend and resume. `power-profiles-daemon` and KDE/GNOME can use the backend
+Fn+X cycles through the profiles. The EC keeps the selected mode by itself
+across suspend, reboot and power-off (the same setting is exposed in BIOS
+setup), so the driver only reads and writes the register on demand and never
+saves or restores it. `power-profiles-daemon` and KDE/GNOME can use the backend
 without a model-specific userspace service.
 
 The driver also exposes read-only hwmon telemetry from EC registers verified
@@ -102,6 +104,6 @@ GPL-2.0-or-later, matching the upstream driver. See [LICENSE](LICENSE).
 
 本仓库是机械革命无界 14XA 的 Uniwill Linux 平台驱动适配仓库，通过标准
 `platform_profile` 接口提供三档功耗模式（25 W / 45 W / 65 W），支持 Fn+X 循环
-切换，挂起恢复后保持所选模式，可直接配合 `power-profiles-daemon` 与
+切换（档位由 EC 自身保持，挂起、重启、关机后不变），可直接配合 `power-profiles-daemon` 与
 KDE/GNOME 的电源模式使用；并通过标准 hwmon 接口提供只读的 CPU 温度、主风扇
 转速与占空比监控（`sensors` 可直接读取），不包含任何风扇写入控制。

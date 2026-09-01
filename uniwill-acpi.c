@@ -360,7 +360,6 @@ struct uniwill_data {
 	struct mutex usb_c_power_priority_lock; /* Protects dependent bit write and state safe */
 	enum usb_c_power_priority_options last_usb_c_power_priority_option;
 	struct device *ppdev;
-	unsigned int last_manual_fan_ctrl;
 };
 
 struct uniwill_battery_entry {
@@ -1872,15 +1871,6 @@ static int uniwill_suspend_battery(struct uniwill_data *data)
 	return regmap_read(data->regmap, EC_ADDR_CHARGE_CTRL, &data->last_charge_ctrl);
 }
 
-static int uniwill_suspend_platform_profile(struct uniwill_data *data)
-{
-	if (!uniwill_device_supports(data, UNIWILL_FEATURE_PLATFORM_PROFILE))
-		return 0;
-
-	return regmap_read(data->regmap, EC_ADDR_MANUAL_FAN_CTRL,
-			   &data->last_manual_fan_ctrl);
-}
-
 static int uniwill_suspend_nvidia_ctgp(struct uniwill_data *data)
 {
 	if (!uniwill_device_supports(data, UNIWILL_FEATURE_NVIDIA_CTGP_CONTROL))
@@ -1904,10 +1894,6 @@ static int uniwill_suspend(struct device *dev)
 		return ret;
 
 	ret = uniwill_suspend_battery(data);
-	if (ret < 0)
-		return ret;
-
-	ret = uniwill_suspend_platform_profile(data);
 	if (ret < 0)
 		return ret;
 
@@ -1958,21 +1944,6 @@ static int uniwill_resume_battery(struct uniwill_data *data)
 				  data->last_charge_ctrl);
 }
 
-static int uniwill_resume_platform_profile(struct uniwill_data *data)
-{
-	int ret;
-
-	if (!uniwill_device_supports(data, UNIWILL_FEATURE_PLATFORM_PROFILE))
-		return 0;
-
-	ret = regmap_write(data->regmap, EC_ADDR_MANUAL_FAN_CTRL,
-			   data->last_manual_fan_ctrl);
-	if (ret == 0)
-		platform_profile_notify(data->ppdev);
-
-	return ret;
-}
-
 static int uniwill_resume_nvidia_ctgp(struct uniwill_data *data)
 {
 	if (!uniwill_device_supports(data, UNIWILL_FEATURE_NVIDIA_CTGP_CONTROL))
@@ -2006,10 +1977,6 @@ static int uniwill_resume(struct device *dev)
 		return ret;
 
 	ret = uniwill_resume_super_key(data);
-	if (ret < 0)
-		return ret;
-
-	ret = uniwill_resume_platform_profile(data);
 	if (ret < 0)
 		return ret;
 

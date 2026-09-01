@@ -20,16 +20,15 @@
  
  enum usb_c_power_priority_options {
  	USB_C_POWER_PRIORITY_CHARGING = 0,
-@@ -353,6 +359,8 @@
+@@ -353,6 +359,7 @@
  	struct notifier_block nb;
  	struct mutex usb_c_power_priority_lock; /* Protects dependent bit write and state safe */
  	enum usb_c_power_priority_options last_usb_c_power_priority_option;
 +	struct device *ppdev;
-+	unsigned int last_manual_fan_ctrl;
  };
  
  struct uniwill_battery_entry {
-@@ -526,6 +534,7 @@
+@@ -526,6 +533,7 @@
  	case EC_ADDR_LIGHTBAR_AC_GREEN:
  	case EC_ADDR_LIGHTBAR_AC_BLUE:
  	case EC_ADDR_BIOS_OEM:
@@ -37,7 +36,7 @@
  	case EC_ADDR_TRIGGER:
  	case EC_ADDR_OEM_4:
  	case EC_ADDR_CHARGE_CTRL:
-@@ -561,6 +570,7 @@
+@@ -561,6 +569,7 @@
  	case EC_ADDR_LIGHTBAR_AC_GREEN:
  	case EC_ADDR_LIGHTBAR_AC_BLUE:
  	case EC_ADDR_BIOS_OEM:
@@ -45,7 +44,7 @@
  	case EC_ADDR_PWM_1:
  	case EC_ADDR_PWM_2:
  	case EC_ADDR_TRIGGER:
-@@ -594,6 +604,7 @@
+@@ -594,6 +603,7 @@
  	case EC_ADDR_SECOND_FAN_RPM_2:
  	case EC_ADDR_BAT_ALERT:
  	case EC_ADDR_BIOS_OEM:
@@ -53,7 +52,7 @@
  	case EC_ADDR_PWM_1:
  	case EC_ADDR_PWM_2:
  	case EC_ADDR_TRIGGER:
-@@ -1471,7 +1482,7 @@
+@@ -1471,7 +1481,7 @@
  	struct uniwill_battery_entry *entry;
  	int ret;
  
@@ -62,7 +61,7 @@
  	if (!entry)
  		return -ENOMEM;
  
-@@ -1550,10 +1561,98 @@
+@@ -1550,10 +1560,98 @@
  	return devm_battery_hook_register(data->dev, &data->hook);
  }
  
@@ -161,7 +160,7 @@
  
  	switch (action) {
  	case UNIWILL_OSD_BATTERY_ALERT:
-@@ -1579,7 +1678,22 @@
+@@ -1579,7 +1677,22 @@
  		sysfs_notify(&data->dev->kobj, NULL, "fn_lock");
  
  		return NOTIFY_OK;
@@ -184,7 +183,7 @@
  		mutex_lock(&data->input_lock);
  		sparse_keymap_report_event(data->input_device, action, 1, true);
  		mutex_unlock(&data->input_lock);
-@@ -1707,6 +1821,10 @@
+@@ -1707,6 +1820,10 @@
  	if (ret < 0)
  		return ret;
  
@@ -195,67 +194,7 @@
  	return uniwill_input_init(data);
  }
  
-@@ -1754,6 +1872,15 @@
- 	return regmap_read(data->regmap, EC_ADDR_CHARGE_CTRL, &data->last_charge_ctrl);
- }
- 
-+static int uniwill_suspend_platform_profile(struct uniwill_data *data)
-+{
-+	if (!uniwill_device_supports(data, UNIWILL_FEATURE_PLATFORM_PROFILE))
-+		return 0;
-+
-+	return regmap_read(data->regmap, EC_ADDR_MANUAL_FAN_CTRL,
-+			   &data->last_manual_fan_ctrl);
-+}
-+
- static int uniwill_suspend_nvidia_ctgp(struct uniwill_data *data)
- {
- 	if (!uniwill_device_supports(data, UNIWILL_FEATURE_NVIDIA_CTGP_CONTROL))
-@@ -1780,6 +1907,10 @@
- 	if (ret < 0)
- 		return ret;
- 
-+	ret = uniwill_suspend_platform_profile(data);
-+	if (ret < 0)
-+		return ret;
-+
- 	ret = uniwill_suspend_nvidia_ctgp(data);
- 	if (ret < 0)
- 		return ret;
-@@ -1827,6 +1958,21 @@
- 				  data->last_charge_ctrl);
- }
- 
-+static int uniwill_resume_platform_profile(struct uniwill_data *data)
-+{
-+	int ret;
-+
-+	if (!uniwill_device_supports(data, UNIWILL_FEATURE_PLATFORM_PROFILE))
-+		return 0;
-+
-+	ret = regmap_write(data->regmap, EC_ADDR_MANUAL_FAN_CTRL,
-+			   data->last_manual_fan_ctrl);
-+	if (ret == 0)
-+		platform_profile_notify(data->ppdev);
-+
-+	return ret;
-+}
-+
- static int uniwill_resume_nvidia_ctgp(struct uniwill_data *data)
- {
- 	if (!uniwill_device_supports(data, UNIWILL_FEATURE_NVIDIA_CTGP_CONTROL))
-@@ -1863,6 +2009,10 @@
- 	if (ret < 0)
- 		return ret;
- 
-+	ret = uniwill_resume_platform_profile(data);
-+	if (ret < 0)
-+		return ret;
-+
- 	ret = uniwill_resume_battery(data);
- 	if (ret < 0)
- 		return ret;
-@@ -2041,6 +2191,12 @@
+@@ -2041,6 +2158,12 @@
  		    UNIWILL_FEATURE_PRIMARY_FAN,
  };
  
@@ -268,7 +207,7 @@
  static const struct dmi_system_id uniwill_dmi_table[] __initconst = {
  	{
  		.ident = "XMG FUSION 15 (L19)",
-@@ -2474,6 +2630,15 @@
+@@ -2474,6 +2597,15 @@
  		},
  		.driver_data = &tux_featureset_1_descriptor,
  	},
