@@ -1,6 +1,6 @@
 pkgname=wujie14x-uniwill-dkms
 pkgver=0.2.0
-pkgrel=1
+pkgrel=2
 pkgdesc='DKMS Uniwill platform driver extensions for MECHREVO WUJIE14XA'
 arch=('x86_64')
 url='https://github.com/torvalds/linux/tree/v7.1/drivers/platform/x86/uniwill'
@@ -25,7 +25,7 @@ sha256sums=(
   'e730a13e2c3b5bc741d6a626a4b5ad6d23b8d6834657bc7752952db3108641d9'
   '30425f636c23e938b8d193753d5e486456fe23ea3d8b08300322115267f75374'
   '4c9c3e5b15677adf00dd69d2369aed2367647f789168574314491af809ed9e53'
-  'd4db3474da2ed65ad001008c947dfe4976cbf15d8dfba0cea6b23e370d77f7e2'
+  '9608539cee57894aa2be9371d615b058d12ee2e0c800651978ee6cea6556ee63'
 )
 
 package() {
